@@ -3,8 +3,10 @@
 namespace Tokenly\EventsPublisher;
 
 use Exception;
+use Illuminate\Queue\QueueManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
+use Tokenly\EventsPublisher\Publisher;
 
 /*
 * EventsPublisherServiceProvider
@@ -31,9 +33,12 @@ class EventsPublisherServiceProvider extends ServiceProvider
             __DIR__.'/../config/events-publisher.php', 'events-publisher'
         );
 
-        $this->app->bind('Tokenly\EventsPublisher\Contracts\APIUserRepositoryContract', function($app) {
+        $this->app->bind(Publisher::class, function($app) {
+            $queue_manager = app(QueueManager::class);
+            $queue_connection = $queue_manager->connection(Config::get('events-publisher.queueConnection'));
+
             return new Publisher(
-                Config::get('events-publisher.queueConnection'),
+                $queue_connection,
                 Config::get('events-publisher.queueName'),
                 Config::get('events-publisher.mixpanelActive'),
                 Config::get('events-publisher.keenActive'),
@@ -43,7 +48,8 @@ class EventsPublisherServiceProvider extends ServiceProvider
 
         // add artisan commands
         $this->commands([
-            'Tokenly\LaravelApiProvider\Commands\NewAPIUserCommand',
+            'Tokenly\EventsPublisher\Commands\SendTestEvent',
+            'Tokenly\EventsPublisher\Commands\SendTestSlackNotification',
         ]);
 
     }

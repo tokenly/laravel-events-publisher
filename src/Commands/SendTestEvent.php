@@ -3,7 +3,7 @@
 namespace Tokenly\EventsPublisher\Commands;
 
 use Illuminate\Console\Command;
-use Tokenly\EventsPublisher\Events\PublishedEvent;
+use Tokenly\EventsPublisher\Events\StatsEvent;
 
 class SendTestEvent extends Command
 {
@@ -13,11 +13,10 @@ class SendTestEvent extends Command
      * @var string
      */
     protected $signature = 'events:send-test-event 
-        { -k|--keen : Send to keen }
-        { -m|--mixpanel : Send to mixpanel }
-        { -s|--slack : Send to slack }
-        {title : The event title}
-        {data : Event JSON}';
+        { --k|keen : Send to keen }
+        { --m|mixpanel : Send to mixpanel }
+        {collection : The event collection}
+        {event : Event JSON}';
 
 
     /**
@@ -35,19 +34,19 @@ class SendTestEvent extends Command
     public function handle()
     {
 
-        $title    = $this->argument('title');
-        $data     = json_decode($this->argument('data'), true);
+        $collection = $this->argument('collection');
+        $event      = json_decode($this->argument('event'), true);
 
         $keen     = $this->option('keen');
         $mixpanel = $this->option('mixpanel');
-        $slack    = $this->option('slack');
 
         $providers = [];
-        if ($keen) { $providers[] = 'keen'; }
-        if ($mixpanel) { $providers[] = 'mixpanel'; }
-        if ($slack) { $providers[] = 'slack'; }
+        if ($keen) { $providers[] = StatsEvent::PROVIDER_KEEN; }
+        if ($mixpanel) { $providers[] = StatsEvent::PROVIDER_MIXPANEL; }
 
-        event(new PublishedEvent($providers, $data));
+        if ($providers) {
+            event(new StatsEvent($collection, $event, $providers));
+        }
 
         $this->comment('done');
     }

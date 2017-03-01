@@ -5,7 +5,8 @@ namespace Tokenly\EventsPublisher;
 use Exception;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
-use Tokenly\EventsPublisher\Events\PublishedEvent;
+use Tokenly\EventsPublisher\Events\SlackNotification;
+use Tokenly\EventsPublisher\Events\StatsEvent;
 
 /*
 * Publisher
@@ -27,6 +28,7 @@ class Publisher
         $this->sendEventToBeanstalkQueue($event, [
             'jobType'    => 'keen',
             'collection' => $collection,
+            'attempt'    => 0,
         ]);
     }
 
@@ -36,46 +38,31 @@ class Publisher
         $this->sendEventToBeanstalkQueue($event, [
             'jobType'    => 'mixpanel',
             'collection' => $collection,
+            'attempt'    => 0,
         ]);
     }
 
-    public function sendSlackEvent($data_or_title, $text_or_fields) {
+    public function sendSlackNotification($message_data) {
         if (!$this->slack_active) { return; }
 
-        if (is_array($text_or_fields)) {
-            $fields = $text_or_fields;
-        } else {
-            $fields = [['title' => 'Description', 'value' => $text_or_fields]];
-        }
-        $fields = $this->normalizeSlackFields($fields);
-
-        if (is_array($data_or_title)) {
-            $event = $data_or_title;
-        } else {
-            $event = ['title' => $data_or_title];
-        }
-
-        $event['fields'] = $fields;
-
-        if (!isset($event['color'])) { $event['color'] = 'good'; }
-
-        $this->sendEventToBeanstalkQueue($event, [
+        $this->sendEventToBeanstalkQueue($message_data, [
             'jobType'    => 'slack',
+            'attempt'    => 0,
         ]);
-    }
 
-    public function onEvent(PublishedEvent $event) {
-        $event_data = $event->event_data;
+     }
+
+    public function onEvent(StatsEvent $event) {
+        $collection = $event->collection;
+        $event_data = $event->event;
         foreach ($event->providers as $provider) {
             switch ($provider) {
                 case 'mixpanel':
-                    $this->sendMixpanelEvent($event_data['title'], $event_data['event']);
+                    $this->sendMixpanelEvent($collection, $event_data);
                     break;
+
                 case 'keen':
-                    $this->sendKeenEvent($event_data['title'], $event_data['event']);
-                    break;
-                case 'slack':
-                    $this->sendSlackEvent($this->firstAvailable($event_data, ['slackTitle', 'title']), $event_data['slackData']);
+                    $this->sendKeenEvent($collection, $event_data);
                     break;
                 
                 default:
@@ -84,28 +71,25 @@ class Publisher
         }
     }
 
+    public function onSlackNotification(SlackNotification $event) {
+        $this->sendSlackNotification($event->notification_data);
+    }
+
 
     public function subscribe($events)
     {
         $events->listen(
-            'Tokenly\EventsPublisher\Events\PublishedEvent',
-            'Tokenly\EventsPublisher\Events\Publisher@onEvent'
+            'Tokenly\EventsPublisher\Events\StatsEvent',
+            'Tokenly\EventsPublisher\Publisher@onEvent'
+        );
+        $events->listen(
+            'Tokenly\EventsPublisher\Events\SlackNotification',
+            'Tokenly\EventsPublisher\Publisher@onSlackNotification'
         );
     }
 
     // ------------------------------------------------------------------------
     
-    protected function normalizeSlackFields($fields_in) {
-        $fields_out = [];
-        foreach($fields_in as $field) {
-            if (!isset($field['short'])) {
-                $field['short'] = (strlen($field['value']) < 25);
-            }
-            $fields_out[] = $field;
-        }
-        return $fields_out;
-    }
-
     protected function sendEventToBeanstalkQueue($event, $meta) {
         $entry = [
             'meta' => $meta,
